@@ -137,31 +137,12 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
       nbrsOpt.getOrElse(Array.empty[(VertexId, VD)])
     }
   } // end of collectNeighbor
-
-//  def collectEdge(edgeDirection: EdgeDirection, aggrF: (Edge[ED], Edge[ED])=> Edge[ED]): VertexRDD[Edge[ED]] = {
-//    val localEdges = graph.mapReduceTriplets[Edge[ED]](
-//      edge => {
-//        val msgToSrc = (edge.srcId, new Edge(edge.srcId, edge.dstId, edge.attr))
-//        val msgToDst = (edge.dstId, new Edge(edge.srcId, edge.dstId, edge.attr))
-//        edgeDirection match {
-//          case EdgeDirection.Either => Iterator(msgToSrc, msgToDst)
-//          case EdgeDirection.In => Iterator(msgToDst)
-//          case EdgeDirection.Out => Iterator(msgToSrc)
-//          case EdgeDirection.Both =>
-//            throw new SparkException("collectLocalEdges does not support EdgeDirection.Both. Use" +
-//              "EdgeDirection.Either instead.")
-//        }
-//      },
-//      (a, b) => aggrF(a, b))
-//
-////    graph.vertices.leftJoin(localEdges) { (vid, vdata, localEdgesOpt) =>
-////      localEdgesOpt.getOrElse(Array.empty[Edge[ED]])
-//    }
-//  }
   
  /**
    * Returns an RDD that contains for each vertex v its local edges, 
    * i.e., the edges that are incident on v, in the user-specified direction.
+   * Warning: note that singleton vertices, those with no edges in the given
+   * direction will not be part of the return value.
    *
    * @note This function could be highly inefficient on power-law
    * graphs where high degree vertices may force a large amount of
@@ -262,7 +243,16 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   }
   
   /**
-   * 
+   * Transforms each vertex attribute in the graph using the map function, which
+   * takes as input the vertexID, vertex value, and a list of edges of the vertex in
+   * the user-specified direction 
+   *
+   * @note The new graph has the same structure.  As a consequence the underlying index structures
+   * can be reused.
+   *
+   * @param map the function from a vertexID, vertex value, and a list of edges to a new vertex value
+   *
+   * @tparam VD2 the new vertex data types
    */
   def mapVerticesUsingLocalEdges[VD2: ClassTag](edgeDirection: EdgeDirection,
     f: (VertexId, VD, Array[Edge[ED]]) => VD2): Graph[VD2, ED] = {
