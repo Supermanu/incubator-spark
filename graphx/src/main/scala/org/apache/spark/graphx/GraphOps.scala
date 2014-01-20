@@ -241,7 +241,27 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
       vpred: (VertexId, VD2) => Boolean = (v:VertexId, d:VD2) => true): Graph[VD, ED] = {
     graph.mask(preprocess(graph).subgraph(epred, vpred))
   }
-  
+
+ /**
+   * Filters the edges of the graph by keeping only the edges that satisfy the
+   * given predicate. The predicate takes as input the src and destination vertex ids and values.
+   *
+   * @param epred the edge predicate
+   */
+  def filterEdges(epred: EdgeTriplet[VD, ED] => Boolean): Graph[VD, ED] = {
+    filter[VD, ED](graph => graph, epred, (vid, vval) => true)
+  }
+
+  /**
+   * Filters the vertices of the graph by keeping only the vertices that satisfy the
+   * given predicate. The predicate takes as input the vertex id and vertex value.
+   *
+   * @param vpred the vertex predicate
+   */
+  def filterVertices(vpred: (VertexId, VD) => Boolean): Graph[VD, ED] = {
+    filter[VD, ED](graph => graph, e => true, vpred)
+  }
+
   /**
    * Filters the vertices of the graph by keeping only the vertices that satisfy the
    * given predicate. The predicate takes as input the vertex id, vertex value and a
@@ -250,13 +270,13 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param edgeDirection the direction along which to collect the local edges
    * @param vpred the vertex predicate
    */
-  def filterVerticesUsingLocalEdges(edgeDirection: EdgeDirection,
+  def filterVerticesUsingLocalEdgesWithMask(edgeDirection: EdgeDirection,
     vpred: (VertexId, VD, Array[Edge[ED]]) => Boolean): Graph[VD, ED] = {
     // Sets the values of vertices that will be filtered to None, others to Some
-    val graphWithOptVals = graph.outerJoinVertices(collectEdges(edgeDirection)) { (vid, vdata, localEdgesOpt) => 
-       if (vpred(vid, vdata, localEdgesOpt.getOrElse(Array.empty[Edge[ED]]))) Some(vdata) else None
+    val graphWithOptVals = graph.outerJoinVertices(collectEdges(edgeDirection)) {
+      (vid, vdata, localEdgesOpt) => vpred(vid, vdata, localEdgesOpt.getOrElse(Array.empty[Edge[ED]]))
     }
-    graphWithOptVals.subgraph(edgeTriplet => true, (vid, optVal) => optVal.isDefined).mapVertices((vid, optVal) => optVal.get)
+    graph.mask(graphWithOptVals.subgraph(edgeTriplet => true, (vid, boolVal) => boolVal))
   }
 
   /**
