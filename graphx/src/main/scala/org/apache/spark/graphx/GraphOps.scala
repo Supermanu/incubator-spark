@@ -243,6 +243,23 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   }
   
   /**
+   * Filters the vertices of the graph by keeping only the vertices that satisfy the
+   * given predicate. The predicate takes as input the vertex id, vertex value and a
+   * list of edges in the user-specified direction.
+   *
+   * @param edgeDirection the direction along which to collect the local edges
+   * @param vpred the vertex predicate
+   */
+  def filterVerticesUsingLocalEdges(edgeDirection: EdgeDirection,
+    vpred: (VertexId, VD, Array[Edge[ED]]) => Boolean): Graph[VD, ED] = {
+    // Sets the values of vertices that will be filtered to None, others to Some
+    val graphWithOptVals = graph.outerJoinVertices(collectEdges(edgeDirection)) { (vid, vdata, localEdgesOpt) => 
+       if (vpred(vid, vdata, localEdgesOpt.getOrElse(Array.empty[Edge[ED]]))) Some(vdata) else None
+    }
+    graphWithOptVals.subgraph(edgeTriplet => true, (vid, optVal) => optVal.isDefined).mapVertices((vid, optVal) => optVal.get)
+  }
+
+  /**
    * Transforms each vertex attribute in the graph using the map function, which
    * takes as input the vertexID, vertex value, and a list of edges of the vertex in
    * the user-specified direction 
@@ -250,6 +267,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @note The new graph has the same structure.  As a consequence the underlying index structures
    * can be reused.
    *
+   * @param edgeDirection the direction along which to collect the local edges
    * @param map the function from a vertexID, vertex value, and a list of edges to a new vertex value
    *
    * @tparam VD2 the new vertex data types
@@ -260,7 +278,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
     graph.outerJoinVertices(localEdges) { (vid, vdata, localEdgesOpt) => 
       f(vid, vdata, localEdgesOpt.getOrElse(Array.empty[Edge[ED]])) }
   }
-
+    
   /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
    * user-defined vertex-program `vprog` is executed in parallel on

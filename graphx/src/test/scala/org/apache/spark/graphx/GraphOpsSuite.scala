@@ -183,7 +183,7 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
         },
         vpred = (vid: VertexId, deg:Int) => deg > 0
       ).cache()
-
+      val numEdges =filteredGraph.numEdges
       val v = filteredGraph.vertices.collect().toSet
       assert(v === Set((0,0)))
 
@@ -192,7 +192,28 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       assert(e.isEmpty)
     }
   }
-  
+
+  test("filterVerticesUsingLocalEdges") {
+    withSpark { sc =>
+      // 5 vertices, every vertex points at 0, 1 points at every vertex, 2 also points at 3.
+      // All edges have value -1
+      val edges = sc.parallelize((1 to 1).flatMap(x => {
+        Vector(Edge(0, 1, -1), Edge(1, 0, -1), Edge(1, 2, -1), Edge(1, 3, -1), Edge(1,4, -1),
+          Edge(2, 3, -1), Edge(2, 0, -1), Edge(3, 0, -1), Edge(4, 0, -1)) }
+      ))
+      // Vertex i have value i
+      val vertices = sc.parallelize((0 to 4).map(vid => (vid:VertexId, vid)))
+      val graph: Graph[Int, Int] = Graph(vertices, edges).cache()
+      val filteredGraph = graph.filterVerticesUsingLocalEdges(EdgeDirection.Out, (vid, vdata, edges) => edges.length >= 2)
+      assert(2 == filteredGraph.numVertices)
+      val collectedVertices = filteredGraph.vertices.collect
+      assert(collectedVertices.contains((1, 1)))
+      assert(collectedVertices.contains((2, 2)))
+      assert(1 == filteredGraph.numEdges)
+      assert(Edge(1, 2, -1) === filteredGraph.edges.collect()(0))
+    }
+  }
+
   private def getCycleGraph(sc: SparkContext, numVertices: Int): Graph[Double, Int] = {
     val cycle = (0 until numVertices).map(x => (x, (x+1)%numVertices))
     getGraphFromSeq(sc, cycle)
