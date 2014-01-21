@@ -249,7 +249,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param epred the edge predicate
    */
   def filterEdges(epred: EdgeTriplet[VD, ED] => Boolean): Graph[VD, ED] = {
-    filter[VD, ED](graph => graph, epred, (vid, vval) => true)
+    graph.subgraph(epred, (vid, vval) => true)
   }
 
   /**
@@ -259,7 +259,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param vpred the vertex predicate
    */
   def filterVertices(vpred: (VertexId, VD) => Boolean): Graph[VD, ED] = {
-    filter[VD, ED](graph => graph, e => true, vpred)
+    graph.subgraph(e => true, vpred)
   }
 
   /**
