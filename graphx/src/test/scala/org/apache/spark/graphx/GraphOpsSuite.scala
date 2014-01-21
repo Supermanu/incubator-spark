@@ -47,10 +47,11 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       assert(nbrs.count === 100)
       assert(graph.numVertices === nbrs.count)
       nbrs.collect.foreach { case (vid, nbrs) => assert(nbrs.size === 2) }
-      nbrs.collect.foreach { case (vid, nbrs) =>
-        val s = nbrs.toSet
-        assert(s.contains((vid + 1) % 100))
-        assert(s.contains(if (vid > 0) vid - 1 else 99 ))
+      nbrs.collect.foreach {
+        case (vid, nbrs) =>
+          val s = nbrs.toSet
+          assert(s.contains((vid + 1) % 100))
+          assert(s.contains(if (vid > 0) vid - 1 else 99))
       }
     }
   }
@@ -61,57 +62,61 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       val edges = graph.collectEdges(EdgeDirection.Out).cache()
       assert(edges.count == 100)
       edges.collect.foreach { case (vid, edges) => assert(edges.size == 1) }
-      edges.collect.foreach { case (vid, edges) => 
-        val s = edges.toSet
-        val edgeDstIds = s.map(e => e.dstId)
-        assert(edgeDstIds.contains((vid + 1) % 100))
+      edges.collect.foreach {
+        case (vid, edges) =>
+          val s = edges.toSet
+          val edgeDstIds = s.map(e => e.dstId)
+          assert(edgeDstIds.contains((vid + 1) % 100))
       }
     }
   }
-  
+
   test("collectEdgesCycleDirectionIn") {
     withSpark { sc =>
       val graph = getCycleGraph(sc, 100)
       val edges = graph.collectEdges(EdgeDirection.In).cache()
       assert(edges.count == 100)
       edges.collect.foreach { case (vid, edges) => assert(edges.size == 1) }
-      edges.collect.foreach { case (vid, edges) => 
-        val s = edges.toSet
-        val edgeSrcIds = s.map(e => e.srcId)
-        assert(edgeSrcIds.contains(if (vid > 0) vid - 1 else 99 ))
+      edges.collect.foreach {
+        case (vid, edges) =>
+          val s = edges.toSet
+          val edgeSrcIds = s.map(e => e.srcId)
+          assert(edgeSrcIds.contains(if (vid > 0) vid - 1 else 99))
       }
     }
   }
-  
+
   test("collectEdgesCycleDirectionEither") {
     withSpark { sc =>
       val graph = getCycleGraph(sc, 100)
       val edges = graph.collectEdges(EdgeDirection.Either).cache()
       assert(edges.count == 100)
       edges.collect.foreach { case (vid, edges) => assert(edges.size == 2) }
-      edges.collect.foreach { case (vid, edges) => 
-        val s = edges.toSet
-        val edgeIds = s.map(e => if (vid != e.srcId) e.srcId else e.dstId)
-        assert(edgeIds.contains((vid + 1) % 100))
-        assert(edgeIds.contains(if (vid > 0) vid - 1 else 99 ))
+      edges.collect.foreach {
+        case (vid, edges) =>
+          val s = edges.toSet
+          val edgeIds = s.map(e => if (vid != e.srcId) e.srcId else e.dstId)
+          assert(edgeIds.contains((vid + 1) % 100))
+          assert(edgeIds.contains(if (vid > 0) vid - 1 else 99))
       }
     }
   }
-  
+
   test("collectEdgesChainDirectionOut") {
     withSpark { sc =>
       val graph = getChainGraph(sc, 50)
       val edges = graph.collectEdges(EdgeDirection.Out).cache()
       assert(edges.count == 49)
       edges.collect.foreach { case (vid, edges) => assert(edges.size == 1) }
-      edges.collect.foreach { case (vid, edges) => 
-        val s = edges.toSet
-        val edgeDstIds = s.map(e => e.dstId)
-        assert(edgeDstIds.contains(vid + 1))
+      edges.collect.foreach {
+        case (vid, edges) =>
+          val s = edges.toSet
+          val edgeDstIds = s.map(e => e.dstId)
+          assert(edgeDstIds.contains(vid + 1))
       }
     }
   }
-  
+
   test("collectEdgesChainDirectionIn") {
     withSpark { sc =>
       val graph = getChainGraph(sc, 50)
@@ -120,32 +125,36 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       // not have any edges in the specified direction.
       assert(edges.count == 49)
       edges.collect.foreach { case (vid, edges) => assert(edges.size == 1) }
-      edges.collect.foreach { case (vid, edges) => 
-        val s = edges.toSet
-        val edgeDstIds = s.map(e => e.srcId)
-        assert(edgeDstIds.contains((vid - 1) % 100))
+      edges.collect.foreach {
+        case (vid, edges) =>
+          val s = edges.toSet
+          val edgeDstIds = s.map(e => e.srcId)
+          assert(edgeDstIds.contains((vid - 1) % 100))
       }
     }
   }
-  
-  test("collectEdgesChainDirectionBoth") {
+
+  test("collectEdgesChainDirectionEither") {
     withSpark { sc =>
       val graph = getChainGraph(sc, 50)
       val edges = graph.collectEdges(EdgeDirection.Either).cache()
       // We expect only 49 because collectEdges does not return vertices that do
       // not have any edges in the specified direction.
       assert(edges.count === 50)
-      edges.collect.foreach { case (vid, edges) => if (vid > 0 && vid < 49) assert(edges.size == 2) 
-        else assert(edges.size == 1)}
-      edges.collect.foreach { case (vid, edges) => 
-        val s = edges.toSet
-        val edgeIds = s.map(e => if (vid != e.srcId) e.srcId else e.dstId)
-        if (vid == 0) { assert(edgeIds.contains(1)) }
-        else if (vid == 49) { assert(edgeIds.contains(48)) }
-        else {
-          assert(edgeIds.contains(vid + 1))
-          assert(edgeIds.contains(vid - 1))
-        }
+      edges.collect.foreach {
+        case (vid, edges) => if (vid > 0 && vid < 49) assert(edges.size == 2)
+        else assert(edges.size == 1)
+      }
+      edges.collect.foreach {
+        case (vid, edges) =>
+          val s = edges.toSet
+          val edgeIds = s.map(e => if (vid != e.srcId) e.srcId else e.dstId)
+          if (vid == 0) { assert(edgeIds.contains(1)) }
+          else if (vid == 49) { assert(edgeIds.contains(48)) }
+          else {
+            assert(edgeIds.contains(vid + 1))
+            assert(edgeIds.contains(vid - 1))
+          }
       }
     }
   }
@@ -158,7 +167,7 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       // 1 vertex with value -1
       // all others with value (vId- 1)
       // no vertex with value Long.MaxValue
-      val newGraph = graph.mapVerticesUsingLocalEdges[VertexId](EdgeDirection.In, 
+      val newGraph = graph.mapVerticesUsingLocalEdges[VertexId](EdgeDirection.In,
         (vid, vdata, edges) => {
           if (edges.isEmpty) { -1 }
           else if (edges.length == 1) { edges(0).srcId }
@@ -166,27 +175,28 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
         }).cache()
       assert(50 == newGraph.numVertices)
       assert(49 == newGraph.numEdges)
-      newGraph.vertices.collect.foreach { case (vid, value) => 
-        if (vid == 0) assert(-1 == value) else assert(vid - 1 == value) }
+      newGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(-1 == value) else assert(vid - 1 == value)
+      }
     }
   }
 
-  test ("filter") {
+  test("filter") {
     withSpark { sc =>
       val n = 5
-      val vertices = sc.parallelize((0 to n).map(x => (x:VertexId, x)))
+      val vertices = sc.parallelize((0 to n).map(x => (x: VertexId, x)))
       val edges = sc.parallelize((1 to n).map(x => Edge(0, x, x)))
       val graph: Graph[Int, Int] = Graph(vertices, edges).cache()
       val filteredGraph = graph.filter(
         graph => {
           val degrees: VertexRDD[Int] = graph.outDegrees
-          graph.outerJoinVertices(degrees) {(vid, data, deg) => deg.getOrElse(0)}
+          graph.outerJoinVertices(degrees) { (vid, data, deg) => deg.getOrElse(0) }
         },
-        vpred = (vid: VertexId, deg:Int) => deg > 0
-      ).cache()
-      val numEdges =filteredGraph.numEdges
+        vpred = (vid: VertexId, deg: Int) => deg > 0).cache()
+      val numEdges = filteredGraph.numEdges
       val v = filteredGraph.vertices.collect().toSet
-      assert(v === Set((0,0)))
+      assert(v === Set((0, 0)))
 
       // the map is necessary because of object-reuse in the edge iterator
       val e = filteredGraph.edges.map(e => Edge(e.srcId, e.dstId, e.attr)).collect().toSet
@@ -199,11 +209,11 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       // 5 vertices, every vertex points at 0, 1 points at every vertex, 2 also points at 3.
       // Edge (u, v) has value u + v
       val edges = sc.parallelize((1 to 1).flatMap(x => {
-        Vector(Edge(0, 1, 1), Edge(1, 0, 1), Edge(1, 2, 3), Edge(1, 3, 4), Edge(1,4, 5),
-          Edge(2, 3, 5), Edge(2, 0, 2), Edge(3, 0, 3), Edge(4, 0, 4)) }
-      ))
+        Vector(Edge(0, 1, 1), Edge(1, 0, 1), Edge(1, 2, 3), Edge(1, 3, 4), Edge(1, 4, 5),
+          Edge(2, 3, 5), Edge(2, 0, 2), Edge(3, 0, 3), Edge(4, 0, 4))
+      }))
       // Vertex i have value i
-      val vertices = sc.parallelize((0 to 4).map(vid => (vid:VertexId, vid)))
+      val vertices = sc.parallelize((0 to 4).map(vid => (vid: VertexId, vid)))
       val graph: Graph[Int, Int] = Graph(vertices, edges).cache()
       val filteredGraph = graph.filterEdges(edgeTriplet => (edgeTriplet.attr == 3))
       assert(5 == filteredGraph.numVertices)
@@ -226,11 +236,11 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       // 5 vertices, every vertex points at 0, 1 points at every vertex, 2 also points at 3.
       // Edge (u, v) has value u + v
       val edges = sc.parallelize((1 to 1).flatMap(x => {
-        Vector(Edge(0, 1, 1), Edge(1, 0, 1), Edge(1, 2, 3), Edge(1, 3, 4), Edge(1,4, 5),
-          Edge(2, 3, 5), Edge(2, 0, 2), Edge(3, 0, 3), Edge(4, 0, 4)) }
-      ))
+        Vector(Edge(0, 1, 1), Edge(1, 0, 1), Edge(1, 2, 3), Edge(1, 3, 4), Edge(1, 4, 5),
+          Edge(2, 3, 5), Edge(2, 0, 2), Edge(3, 0, 3), Edge(4, 0, 4))
+      }))
       // Vertex i have value i
-      val vertices = sc.parallelize((0 to 4).map(vid => (vid:VertexId, vid)))
+      val vertices = sc.parallelize((0 to 4).map(vid => (vid: VertexId, vid)))
       val graph: Graph[Int, Int] = Graph(vertices, edges).cache()
       val filteredGraph = graph.filterVertices((vid, vval) => (vval <= 2))
       assert(3 == filteredGraph.numVertices)
@@ -247,17 +257,17 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       assert(filteredEdges.contains(Edge(2, 0, 2)))
     }
   }
-    
+
   test("filterVerticesUsingLocalEdges") {
     withSpark { sc =>
       // 5 vertices, every vertex points at 0, 1 points at every vertex, 2 also points at 3.
       // All edges have value -1
       val edges = sc.parallelize((1 to 1).flatMap(x => {
-        Vector(Edge(0, 1, -1), Edge(1, 0, -1), Edge(1, 2, -1), Edge(1, 3, -1), Edge(1,4, -1),
-          Edge(2, 3, -1), Edge(2, 0, -1), Edge(3, 0, -1), Edge(4, 0, -1)) }
-      ))
+        Vector(Edge(0, 1, -1), Edge(1, 0, -1), Edge(1, 2, -1), Edge(1, 3, -1), Edge(1, 4, -1),
+          Edge(2, 3, -1), Edge(2, 0, -1), Edge(3, 0, -1), Edge(4, 0, -1))
+      }))
       // Vertex i have value i
-      val vertices = sc.parallelize((0 to 4).map(vid => (vid:VertexId, vid)))
+      val vertices = sc.parallelize((0 to 4).map(vid => (vid: VertexId, vid)))
       val graph: Graph[Int, Int] = Graph(vertices, edges).cache()
       val filteredGraph = graph.filterVerticesUsingLocalEdgesWithMask(EdgeDirection.Out,
         (vid, vdata, edges) => edges.length >= 2)
@@ -268,6 +278,149 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       assert(1 == filteredGraph.numEdges)
       assert(Edge(1, 2, -1) == filteredGraph.edges.collect()(0))
     }
+  }
+
+  test("aggregateNeighborValuesDirectionIn") {
+    withSpark { sc =>
+      // Each vertex adds to its value the value of its incoming neighbors
+      val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
+        EdgeDirection.In, (nid, nvalue) => true, (vid, vvalue) => true, (vid, vvalue) => vvalue,
+        (a, b) => a + b, (vid, vvalue, optAggregatedValue) => {
+          (vvalue + optAggregatedValue.getOrElse(0))
+        })
+      assert(5 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(1 == value)
+          else if (vid == 1) assert(8 == value)
+          else if (vid == 2) assert(3 == value)
+          else if (vid == 3) assert(4 == value)
+          else if (vid == 4) assert(4 == value)
+      }
+    }
+  }
+
+  test("aggregateNeighborValuesDirectionOut") {
+    withSpark { sc =>
+      // Each vertex adds to its value the value of its incoming neighbors
+      val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
+        EdgeDirection.Out, (nid, nvalue) => true, (vid, vvalue) => true, (vid, vvalue) => vvalue,
+        (a, b) => a + b, (vid, vvalue, optAggregatedValue) => {
+          (vvalue + optAggregatedValue.getOrElse(0))
+        })
+      assert(5 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(1 == value)
+          else if (vid == 1) assert(6 == value)
+          else if (vid == 2) assert(2 == value)
+          else if (vid == 3) assert(4 == value)
+          else if (vid == 4) assert(5 == value)
+      }
+    }
+  }
+
+  test("aggregateNeighborValuesDirectionEither") {
+    withSpark { sc =>
+      // Each vertex adds to its value the value of its incoming neighbors
+      val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
+        EdgeDirection.Either, (nid, nvalue) => true, (vid, vvalue) => true, (vid, vvalue) => vvalue,
+        (a, b) => a + b, (vid, vvalue, optAggregatedValue) => {
+          (vvalue + optAggregatedValue.getOrElse(0))
+        })
+      assert(5 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          println("vid: " + vid + " value: " + value)
+          if (vid == 0) assert(2 == value)
+          else if (vid == 1) assert(13 == value)
+          else if (vid == 2) assert(3 == value)
+          else if (vid == 3) assert(5 == value)
+          else if (vid == 4) assert(5 == value)
+      }
+    }
+  }
+
+  test("aggregateNeighborValuesNbrPredicate") {
+    withSpark { sc =>
+      // Each vertex adds to its value the value of its incoming neighbors
+      // filtering outgoing neighbors with id <= 2. As a result 1 should now only aggregate
+      // the values of 0 and 2, and not of 3 (so instead of 6, now it should have a value of 3)
+      val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
+        EdgeDirection.Out, (nid, nvalue) => (nid <= 2), (vid, vvalue) => true, (vid, vvalue) => vvalue,
+        (a, b) => a + b, (vid, vvalue, optAggregatedValue) => {
+          (vvalue + optAggregatedValue.getOrElse(0))
+        })
+      assert(5 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(1 == value)
+          else if (vid == 1) assert(3 == value)
+          else if (vid == 2) assert(2 == value)
+          else if (vid == 3) assert(4 == value)
+          else if (vid == 4) assert(5 == value)
+      }
+    }
+  }
+
+  test("aggregateNeighborValuesVertexPredicate") {
+    withSpark { sc =>
+      // Each vertex adds to its value the value of its incoming neighbors
+      // updating only vertices with id > 1. As a result the values of 0 and 1 should not change
+      // and remain as 0 and 1, respectively.
+      val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
+        EdgeDirection.Out, (nid, nvalue) => true, (vid, vvalue) => vid > 1, (vid, vvalue) => vvalue,
+        (a, b) => a + b, (vid, vvalue, optAggregatedValue) => {
+          (vvalue + optAggregatedValue.getOrElse(0))
+        })
+      assert(5 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(0 == value)
+          else if (vid == 1) assert(1 == value)
+          else if (vid == 2) assert(2 == value)
+          else if (vid == 3) assert(4 == value)
+          else if (vid == 4) assert(5 == value)
+      }
+    }
+  }
+
+  test("aggregateNeighborValuesUpdateFunction") {
+    withSpark { sc =>
+      // The update function takes the minimum of the propagated value and the current value.
+      // As a result when updating outgoing neighbor values, 3 and 4 should update their values
+      // to 1, 0 and 1Êshould remain unchanged. and 2 should update it to 0 because the
+      // we set the default aggregated value to 0.
+      val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
+        EdgeDirection.Out, (nid, nvalue) => true, (vid, vvalue) => vid > 1, (vid, vvalue) => vvalue,
+        (a, b) => a + b, (vid, vvalue, optAggregatedValue) => Math.min(vvalue, optAggregatedValue.getOrElse(0)))
+      assert(5 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(0 == value)
+          else if (vid == 1) assert(1 == value)
+          else if (vid == 2) assert(0 == value)
+          else if (vid == 3) assert(1 == value)
+          else if (vid == 4) assert(1 == value)
+      }
+    }
+  }
+
+  private def getGraphForAggregateNeighborValuesTest(sc: SparkContext): Graph[Int, Int] = {
+    // 5 vertices, 1 points at every vertex except 4. 0, 3, and 4 point back to 1.
+    // As a result 2 is a vertex without outgoing edges, and 4 is a vertex without incoming edges
+    val edges = sc.parallelize((1 to 1).flatMap(x => {
+      Vector(Edge(1, 0, -1), Edge(1, 2, -1), Edge(1, 3, -1), Edge(0, 1, -1), Edge(3, 1, -1), Edge(4, 1, -1))
+    }))
+    // Vertex i have value i
+    val vertices = sc.parallelize((0 to 4).map(vid => (vid: VertexId, vid)))
+    Graph(vertices, edges).cache()
   }
 
   private def getCycleGraph(sc: SparkContext, numVertices: Int): Graph[Double, Int] = {

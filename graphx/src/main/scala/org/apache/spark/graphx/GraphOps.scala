@@ -298,7 +298,73 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
     graph.outerJoinVertices(localEdges) { (vid, vdata, localEdgesOpt) => 
       f(vid, vdata, localEdgesOpt.getOrElse(Array.empty[Edge[ED]])) }
   }
-    
+  
+  /**
+   * Updates the value of each vertex v by aggregating the values of v's neighbors in the specified
+   * direction. Only the vertices which evaluate to true on the given vertex predicate are updated.
+   * Other vertices remain unchanged. And only the values of those neighbors which evaluate to true
+   * on the given neighbor predicate are aggregated. Used in algorithms like one iteration of pagerank,
+   * hits, conductance, and others.
+   * 
+   * @param edgeDirection the direction along which to collect the local edges
+   * @param nbrPred selects which neighbors' values to aggregate
+   * @param vPred selects which vertices to update
+   * @param aggregatedValueF extracts the relevant part of v's neighbor's value that
+   *        is needed to update v
+   * @param aggregateF aggregates two neighbor's values
+   * @param udpateF given a vertex v's id, value and the aggregated values of v's neighbors
+   *        returns a new value for the vertex.
+   */
+  def aggregateNeighborValues[U: ClassTag](edgeDirection: EdgeDirection,
+    nbrPred: (VertexId, VD) => Boolean, vPred: (VertexId, VD) => Boolean, 
+    aggregatedValueF: (VertexId, VD) => U, aggregateF: (U, U) => U, 
+    updateF: (VertexId, VD, Option[U]) => VD): Graph[VD, ED] = {    
+    val edgeDirectionToSendMsgs = edgeDirection match {
+      case EdgeDirection.Either => EdgeDirection.Either
+      case EdgeDirection.In => EdgeDirection.Out
+      case EdgeDirection.Out => EdgeDirection.In
+    }
+    val messages = graph.mapReduceTriplets(
+      sendMessageF[U](edgeDirectionToSendMsgs, vPred, nbrPred, aggregatedValueF,
+        (aggrValue, edgeValue) => aggrValue), aggregateF, None)
+    graph.outerJoinVertices(messages)((vid, vdata, optAggrValue) =>
+      if (vPred(vid, vdata)) updateF(vid, vdata, optAggrValue) else vdata)
+  }
+
+  private def sendMessageF[U: ClassTag](dirToSendMessage: EdgeDirection, vPred: (VertexId, VD) => Boolean,
+    nbrPred: (VertexId, VD) => Boolean, sendValueFromVertexF: (VertexId, VD) => U,
+    sendAlongEdgeF: (U, ED) => U): 
+    EdgeTriplet[VD, ED] => Iterator[(VertexId, U)] = {
+    (edge: EdgeTriplet[VD, ED]) => {
+        val msgToSrcVertex = (edge.srcId, sendAlongEdgeF(sendValueFromVertexF(edge.dstId, edge.dstAttr), edge.attr))
+        val msgToDstVertex = (edge.dstId, sendAlongEdgeF(sendValueFromVertexF(edge.srcId, edge.srcAttr), edge.attr))
+        // Below a message is sent only if the nbr sending the message evaluates to true for nbrPred
+        // and the receiving vertex evaluates to true for the vPred.
+        dirToSendMessage match {
+          case EdgeDirection.Either => {
+            if (vPred(edge.srcId, edge.srcAttr) && nbrPred(edge.dstId, edge.dstAttr)
+              && vPred(edge.dstId, edge.dstAttr) && nbrPred(edge.srcId, edge.srcAttr))
+              Iterator(msgToSrcVertex, msgToDstVertex)
+            // If the src vertex evaluates to true for vPred, and the dst vertex evaluates to 
+            // true for the nbrPred, then the nbr, i.e. dst, can send its value to vertex, i.e. src
+            else if (vPred(edge.srcId, edge.srcAttr) && nbrPred(edge.dstId, edge.dstAttr)) Iterator(msgToSrcVertex)
+            // Exactly the opposite scenario of the above comment
+            else if (vPred(edge.dstId, edge.dstAttr) && nbrPred(edge.srcId, edge.srcAttr)) Iterator(msgToDstVertex)
+            else Iterator.empty
+          }
+          case EdgeDirection.Out =>
+            if (nbrPred(edge.srcId, edge.srcAttr) && vPred(edge.dstId, edge.dstAttr))
+              Iterator(msgToDstVertex) else Iterator.empty
+          case EdgeDirection.In =>
+            if (nbrPred(edge.dstId, edge.dstAttr) && vPred(edge.srcId, edge.srcAttr))
+              Iterator(msgToSrcVertex) else Iterator.empty
+          case EdgeDirection.Both =>
+            throw new SparkException("aggregateNeighborValues does not support EdgeDirection.Both. Use" +
+              "EdgeDirection.Either instead.")
+        }
+      }
+  }
+
   /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
    * user-defined vertex-program `vprog` is executed in parallel on
