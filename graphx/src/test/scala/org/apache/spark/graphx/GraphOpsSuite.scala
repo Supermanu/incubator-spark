@@ -334,7 +334,6 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       assert(6 == resultGraph.numEdges)
       resultGraph.vertices.collect.foreach {
         case (vid, value) =>
-          println("vid: " + vid + " value: " + value)
           if (vid == 0) assert(2 == value)
           else if (vid == 1) assert(13 == value)
           else if (vid == 2) assert(3 == value)
@@ -410,6 +409,129 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
           else if (vid == 4) assert(1 == value)
       }
     }
+  }
+
+  test("propagateAndAggregateDirectionIn") {
+    withSpark { sc =>
+      // We are propagating towards in neighbors. Therefore, when the aggregation is the min, 
+      // 3 and 4 should update their values to 1 and 2, respectively, and others should remain unchanged.
+      val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+        EdgeDirection.In, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
+        (a, b) => Math.min(a, b),
+        (vid, vval, propagatedVal) => Math.min(vval, propagatedVal))
+      assert(5 == resultGraph.numVertices)
+      assert(4 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(0 == value)
+          else if (vid == 1) assert(1 == value)
+          else if (vid == 2) assert(2 == value)
+          else if (vid == 3) assert(1 == value)
+          else if (vid == 4) assert(2 == value)
+      }
+    }
+  }
+
+  test("propagateAndAggregateDirectionOut") {
+       withSpark { sc =>
+        // We are propagating towards out neighbors. Therefore, when the aggregation is the max, 
+        // 1 and 2 should update their values to 3 and 4, respectively, and others should remain unchanged.
+        val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+          EdgeDirection.Out, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
+          (a, b) => Math.max(a, b),
+          (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
+        assert(5 == resultGraph.numVertices)
+        assert(4 == resultGraph.numEdges)
+        resultGraph.vertices.collect.foreach {
+          case (vid, value) =>
+            if (vid == 0) assert(0 == value)
+            else if (vid == 1) assert(3 == value)
+            else if (vid == 2) assert(4 == value)
+            else if (vid == 3) assert(3 == value)
+            else if (vid == 4) assert(4 == value)
+        }
+      }
+    }
+  
+    test("propagateAndAggregateDirectionEither") {
+       withSpark { sc =>
+        // We are propagating towards all neighbors. Therefore, when the aggregation is the max, 
+        // every vertex value should be 4 in the end.
+        val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+          EdgeDirection.Either, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
+          (a, b) => Math.max(a, b),
+          (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
+        assert(5 == resultGraph.numVertices)
+        assert(4 == resultGraph.numEdges)
+        resultGraph.vertices.collect.foreach { case (vid, value) => assert(4 == value) }
+      }
+    }
+  
+    test("propagateAndAggregateStartVertexPredicate") {
+       withSpark { sc =>
+        // We are propagating towards out neighbors, starting from vertex 3. Therefore, when the aggregation is the max, 
+        // 1 should update its value to 3 and others should remain unchanged.
+        val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+          EdgeDirection.Out,
+          (vid, vvals) => (vid == 3) /* only start from vertex 3 */,
+          (vid, vval) => vval, (vval, eval) => vval, (a, b) => Math.max(a, b),
+          (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
+        assert(5 == resultGraph.numVertices)
+        assert(4 == resultGraph.numEdges)
+        resultGraph.vertices.collect.foreach {
+          case (vid, value) =>
+            if (vid == 0) assert(0 == value)
+            else if (vid == 1) assert(3 == value)
+            else if (vid == 2) assert(2 == value)
+            else if (vid == 3) assert(3 == value)
+            else if (vid == 4) assert(4 == value)
+        }
+      }
+    }
+    
+
+  test("propagateAndAggregateDirectionPropagateWithEdgeDistances") {
+    withSpark { sc =>
+      // We are running single source shortest paths from vertex 0. The graph is as follows:
+      // 0 to 4 form a cycle. There is also one edge between 0 and 5. (0 -> 4) edge has value 10,
+      // every other edge has value 1.
+      // When we propagate the distances by including the edge values, we expect the result distances to be: 
+      // 1 has distance 1, 2 has distance 2, 3 has distance 3, 4 has distance 4 and 5 has distance 1
+      val edges = sc.parallelize((1 to 1).flatMap(x => {
+        Vector(Edge(0, 1, 1), Edge(0, 4, 10), Edge(1, 2, 1), Edge(2, 3, 1), Edge(3, 4, 1), Edge(0, 5, 1))
+      }))
+      // Vertex 0 has value 0, others have value Int.MaxValue
+      val vertices = sc.parallelize((0 to 5).map(vid =>
+        if (vid == 0) (vid: VertexId, 0) else (vid: VertexId, Int.MaxValue)))
+      val graph = Graph(vertices, edges).cache()
+      val resultGraph = graph.propagateAndAggregate[Int](
+        EdgeDirection.Either,
+        (vid, vvals) => (vid == 0) /* only start from vertex 0 */ ,
+        (vid, vval) => vval, (vval, eval) => vval + eval, (a, b) => Math.min(a, b),
+        (vid, vval, propagatedVal) => Math.min(vval, propagatedVal))
+      assert(6 == resultGraph.numVertices)
+      assert(6 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(0 == value)
+          else if (vid == 1) assert(1 == value)
+          else if (vid == 2) assert(2 == value)
+          else if (vid == 3) assert(3 == value)
+          else if (vid == 4) assert(4 == value)
+          else if (vid == 5) assert(1 == value)
+      }
+    }
+  }
+
+  private def getGraphForPropagateAndAggregateTest(sc: SparkContext): Graph[Int, Int] = {
+    // 5 vertices that form a tree. 0 is the root pointing at 3 and 4. 1 is 3's child and
+    // 2 is 4's child. As a result, there is a total of 4 edges.
+    val edges = sc.parallelize((1 to 1).flatMap(x => {
+      Vector(Edge(0, 3, -1), Edge(0, 4, -1), Edge(3, 1, -1), Edge(4, 2, -1))
+    }))
+    // Vertex i have value i
+    val vertices = sc.parallelize((0 to 4).map(vid => (vid: VertexId, vid)))
+    Graph(vertices, edges).cache()
   }
 
   private def getGraphForAggregateNeighborValuesTest(sc: SparkContext): Graph[Int, Int] = {

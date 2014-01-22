@@ -313,7 +313,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    *        is needed to update v
    * @param aggregateF aggregates two neighbor's values
    * @param udpateF given a vertex v's id, value and the aggregated values of v's neighbors
-   *        returns a new value for the vertex.
+   *        returns a new value for v.
    */
   def aggregateNeighborValues[U: ClassTag](edgeDirection: EdgeDirection,
     nbrPred: (VertexId, VD) => Boolean, vPred: (VertexId, VD) => Boolean, 
@@ -325,19 +325,21 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
       case EdgeDirection.Out => EdgeDirection.In
     }
     val messages = graph.mapReduceTriplets(
-      sendMessageF[U](edgeDirectionToSendMsgs, vPred, nbrPred, aggregatedValueF,
+      sendMessageFForAggregateNeighborValues[U](edgeDirectionToSendMsgs, vPred, nbrPred, aggregatedValueF,
         (aggrValue, edgeValue) => aggrValue), aggregateF, None)
     graph.outerJoinVertices(messages)((vid, vdata, optAggrValue) =>
       if (vPred(vid, vdata)) updateF(vid, vdata, optAggrValue) else vdata)
   }
 
-  private def sendMessageF[U: ClassTag](dirToSendMessage: EdgeDirection, vPred: (VertexId, VD) => Boolean,
-    nbrPred: (VertexId, VD) => Boolean, sendValueFromVertexF: (VertexId, VD) => U,
-    sendAlongEdgeF: (U, ED) => U): 
-    EdgeTriplet[VD, ED] => Iterator[(VertexId, U)] = {
-    (edge: EdgeTriplet[VD, ED]) => {
-        val msgToSrcVertex = (edge.srcId, sendAlongEdgeF(sendValueFromVertexF(edge.dstId, edge.dstAttr), edge.attr))
-        val msgToDstVertex = (edge.dstId, sendAlongEdgeF(sendValueFromVertexF(edge.srcId, edge.srcAttr), edge.attr))
+  private def sendMessageFForAggregateNeighborValues[U: ClassTag](dirToSendMessage: EdgeDirection,
+    vPred: (VertexId, VD) => Boolean, nbrPred: (VertexId, VD) => Boolean,
+    sendValueFromVertexF: (VertexId, VD) => U, sendAlongEdgeF: (U, ED) => U): 
+    ActiveEdgeTriplet[VD, ED] => Iterator[(VertexId, U)] = {
+    (edge: ActiveEdgeTriplet[VD, ED]) => {
+        val msgToSrcVertex = (edge.srcId, sendAlongEdgeF(sendValueFromVertexF(edge.dstId, edge.dstAttr),
+          edge.attr))
+        val msgToDstVertex = (edge.dstId, sendAlongEdgeF(sendValueFromVertexF(edge.srcId, edge.srcAttr),
+          edge.attr))
         // Below a message is sent only if the nbr sending the message evaluates to true for nbrPred
         // and the receiving vertex evaluates to true for the vPred.
         dirToSendMessage match {
@@ -360,6 +362,105 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
               Iterator(msgToSrcVertex) else Iterator.empty
           case EdgeDirection.Both =>
             throw new SparkException("aggregateNeighborValues does not support EdgeDirection.Both. Use" +
+              "EdgeDirection.Either instead.")
+        }
+      }
+  }
+
+  /**
+   * Iterative version of aggregateNeighborValues. In the first iteration, one or more vertices start
+   * propagating a value to their neighbors in a user-specified direction. Vertices that receive propagated
+   * values aggregate them and update their own values. In the next iteration, all vertices whose values
+   * have changed propagate a new value to their neighbors. The propagation of values continues in
+   * iterations until all vertex values converge.
+   * 
+   * This primitive is similar to the Pregel operation below, but there are differences in its behavior.
+   * First, there is no initial message. Second, we can select which vertices to start propagating from.
+   * Third, the propagation continue only from vertices whose values have changed, (in Pregel, it continues
+   * from vertices that received at least one message). And finally there is no maximum number of iterations.
+   * 
+   * This is the core operation for algorithms like, weakly connected components, single source shortest
+   * paths and also appears in strongly connected components, conductance, betweenness-centrality, and k-core.
+   * 
+   * @param edgeDirection the direction along which to propagate values to
+   * @param startVPred selects which vertices to start the propagation from
+   * @param propagatedValueF extracts the relevant part of a vertex v's value to propagate v's neighbors
+   * @param propagateAlongEdgeF given the output of propagatedValueF and an edge to propagate the value
+   * 		from, possibly returns a modified value to propagate along the edge
+   * @param aggregateF aggregates two values that are being propagated to the same vertex
+   * @param udpateF given a vertex v's id, value and the aggregation of the propagated values to v, returns a
+   *        new value for v.
+   */
+  def propagateAndAggregate[U: ClassTag](edgeDirection: EdgeDirection, startVPred: (VertexId, VD) => Boolean,
+    propagatedValueF: (VertexId, VD) => U, propagateAlongEdgeF: (U, ED) => U, aggregateF: (U, U) => U,
+    updateF: (VertexId, VD, U) => VD): Graph[VD, ED] = {
+    var g = graph
+    var messages = g.mapReduceTriplets(
+      sendMessageFForPropagateAndAggregate(edgeDirection,
+        /* send a message from the source of the edge if it satisfies startVPred */
+        activeEdgeTriplet => startVPred(activeEdgeTriplet.srcId, activeEdgeTriplet.srcAttr),
+        /* send a message from the destination of the edge if it satisfies startVPred */
+        activeEdgeTriplet => startVPred(activeEdgeTriplet.dstId, activeEdgeTriplet.dstAttr),
+        propagatedValueF, propagateAlongEdgeF),
+      aggregateF)
+    var activeMessages = messages.count()
+    // Loop until no more messages are being sent
+    var prevG: Graph[VD, ED] = null
+    while (activeMessages > 0) {
+      // Receive the propagated values/messages. The diff operation ensures that vertices whose values
+      // have not changed do not appear in changedVerts.
+      val changedVerts = g.vertices.diff(g.vertices.innerJoin(messages)(updateF)).cache()
+      // Update the graph with the changed vertices.
+      prevG = g
+      g = g.outerJoinVertices(changedVerts) { (vid, old, newOpt) => newOpt.getOrElse(old) }
+      g.cache()
+
+      val oldMessages = messages
+      messages = g.mapReduceTriplets(
+        sendMessageFForPropagateAndAggregate(edgeDirection,
+          /* send a message from the source of the edge if it is active (i.e. its value changed) */
+          activeEdgeTriplet => activeEdgeTriplet.srcActive,
+          /* send a message from the destination of the edge if it is active (i.e. its value changed) */
+          activeEdgeTriplet => activeEdgeTriplet.dstActive,
+          propagatedValueF, propagateAlongEdgeF),
+        aggregateF, Some((changedVerts, edgeDirection))).cache()
+      activeMessages = messages.count()
+      // Unpersist the RDDs hidden by newly-materialized RDDs
+      oldMessages.unpersist(blocking = false)
+      changedVerts.unpersist(blocking = false)
+      prevG.unpersistVertices(blocking = false)
+    }
+    g
+  }
+
+  private def sendMessageFForPropagateAndAggregate[U: ClassTag](
+    dirToSendMessage: EdgeDirection,
+    sendMessageFromSrcPred: ActiveEdgeTriplet[VD, ED] => Boolean,
+    sendMessageFromDstPred: ActiveEdgeTriplet[VD, ED] => Boolean,
+    propagateValueF: (VertexId, VD) => U,
+    propagateAlongEdgeF: (U, ED) => U): ActiveEdgeTriplet[VD, ED] => Iterator[(VertexId, U)] = {
+    (edge: ActiveEdgeTriplet[VD, ED]) =>
+      {
+        val msgToSrcVertex = (edge.srcId, propagateAlongEdgeF(propagateValueF(edge.dstId, edge.dstAttr), edge.attr))
+        val msgToDstVertex = (edge.dstId, propagateAlongEdgeF(propagateValueF(edge.srcId, edge.srcAttr), edge.attr))
+        // Below a message is sent from the src (dst) vertex v of an edge if sendMessageFromSrcPred
+        // (sendMessageFromDstPred)evaluates to true on v.
+        dirToSendMessage match {
+          case EdgeDirection.Either => {
+            if (sendMessageFromSrcPred(edge) && sendMessageFromDstPred(edge))
+              Iterator(msgToSrcVertex, msgToDstVertex)
+            else if (sendMessageFromSrcPred(edge)) Iterator(msgToDstVertex)
+            else if (sendMessageFromDstPred(edge)) Iterator(msgToSrcVertex)
+            else Iterator.empty
+          }
+          case EdgeDirection.Out =>
+            if (sendMessageFromSrcPred(edge))
+              Iterator(msgToDstVertex) else Iterator.empty
+          case EdgeDirection.In =>
+            if (sendMessageFromDstPred(edge))
+              Iterator(msgToSrcVertex) else Iterator.empty
+          case EdgeDirection.Both =>
+            throw new SparkException("propagateAndAggregate does not support EdgeDirection.Both. Use" +
               "EdgeDirection.Either instead.")
         }
       }
