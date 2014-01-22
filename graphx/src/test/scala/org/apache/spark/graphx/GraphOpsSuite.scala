@@ -269,7 +269,7 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
       // Vertex i have value i
       val vertices = sc.parallelize((0 to 4).map(vid => (vid: VertexId, vid)))
       val graph: Graph[Int, Int] = Graph(vertices, edges).cache()
-      val filteredGraph = graph.filterVerticesUsingLocalEdgesWithMask(EdgeDirection.Out,
+      val filteredGraph = graph.filterVerticesUsingLocalEdges(EdgeDirection.Out,
         (vid, vdata, edges) => edges.length >= 2)
       assert(2 == filteredGraph.numVertices)
       val collectedVertices = filteredGraph.vertices.collect

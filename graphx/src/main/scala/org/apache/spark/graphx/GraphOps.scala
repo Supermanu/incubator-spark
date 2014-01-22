@@ -270,7 +270,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param edgeDirection the direction along which to collect the local edges
    * @param vpred the vertex predicate
    */
-  def filterVerticesUsingLocalEdgesWithMask(edgeDirection: EdgeDirection,
+  def filterVerticesUsingLocalEdges(edgeDirection: EdgeDirection, 
     vpred: (VertexId, VD, Array[Edge[ED]]) => Boolean): Graph[VD, ED] = {
     // Sets the values of vertices that will be filtered to None, others to Some
     val graphWithOptVals = graph.outerJoinVertices(collectEdges(edgeDirection)) {
