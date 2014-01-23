@@ -19,7 +19,6 @@ package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.graphx.impl.GraphImpl
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkException
 import org.apache.spark.graphx.lib._
@@ -163,7 +162,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
           case EdgeDirection.In => Iterator(msgToDst)
           case EdgeDirection.Out => Iterator(msgToSrc)
           case EdgeDirection.Both =>
-            throw new SparkException("collectLocalEdges does not support EdgeDirection.Both. Use" +
+            throw new SparkException("collectEdges does not support EdgeDirection.Both. Use" +
               "EdgeDirection.Either instead.")
         }
       },
