@@ -18,11 +18,11 @@
 package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkException
 import org.apache.spark.graphx.lib._
 import org.apache.spark.rdd.RDD
+import scala.util.Random
 
 /**
  * Contains additional functionality for [[Graph]]. All operations are expressed in terms of the
@@ -545,7 +545,57 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
     graph.outerJoinVertices(messages) { (vid, old, newOpt) =>
       if (newOpt.isDefined) updateF(vid, old, newOpt.get) else old }
   }
+
+  /**
+   * Aggregates a single global value over the vertices of the graph. A few examples use cases are to compute
+   * the norm of the graph, to find the vertex with maximum distance from a given one and many others.
+   * 
+   * @param mapF each vertex emits a value
+   * @param reduceF aggregates the emitted values from the vertices (has to be commutative and associative)
+   * 
+   * @return the aggregated single value from the map and reduce functions
+   */
+  def aggregateGlobalValue[U: ClassTag](mapF: ((VertexId, VD)) => U, reduceF: (U, U) => U): U = {
+    graph.vertices.map[U](mapF).reduce(reduceF)
+  }
   
+  /**
+   * Similar to aggregateGlobalValue, except the map function also takes as input the edges incident to
+   * each vertex in the specified direction.
+   * 
+   * @param edgeDirection the direction along which to collect the local edges
+   * @param mapF each vertex emits a value
+   * @param reduceF aggregates the emitted values from the vertices (has to be commutative and associative)
+   * 
+   * @return the aggregated single value from the map and reduce functions
+   */
+  def aggregateGlobalValueWithLocalEdges[U: ClassTag](
+      edgeDirection: EdgeDirection, mapF: ((VertexId, (VD, Array[Edge[ED]]))) => U, reduceF: (U, U) => U): U = {
+    val localEdges = collectEdges(edgeDirection)
+    graph.vertices.join(localEdges).map[U](mapF).reduce(reduceF)
+  }
+
+  /**
+   * Picks a random vertex from the graph and returns its ID.
+   */
+  def pickRandomVertex(): VertexId = {
+    val probability = 50 / graph.numVertices
+    var found = false
+    var retVal: VertexId = null.asInstanceOf[VertexId]
+    while (!found) {
+      val selectedVertices = graph.vertices.flatMap { vidVvals =>
+        if (Random.nextDouble() < probability) { Some(vidVvals._1) }
+        else { None }
+      }
+      if (selectedVertices.count > 1) {
+        found = true
+        val collectedVertices = selectedVertices.collect()
+        retVal = collectedVertices(Random.nextInt(collectedVertices.size))
+      }
+    }
+   retVal    	  
+  }
+
   /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
    * user-defined vertex-program `vprog` is executed in parallel on
