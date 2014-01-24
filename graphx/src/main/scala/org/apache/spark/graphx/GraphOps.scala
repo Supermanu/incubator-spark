@@ -268,6 +268,8 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    *
    * @param edgeDirection the direction along which to collect the local edges
    * @param vpred the vertex predicate
+   * 
+   * @return the resulting graph at the end of the computation
    */
   def filterVerticesUsingLocalEdges(edgeDirection: EdgeDirection, 
     vpred: (VertexId, VD, Array[Edge[ED]]) => Boolean): Graph[VD, ED] = {
@@ -290,6 +292,8 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param map the function from a vertexID, vertex value, and a list of edges to a new vertex value
    *
    * @tparam VD2 the new vertex data types
+   * 
+   * @return the resulting graph at the end of the computation
    */
   def mapVerticesUsingLocalEdges[VD2: ClassTag](edgeDirection: EdgeDirection,
     f: (VertexId, VD, Array[Edge[ED]]) => VD2): Graph[VD2, ED] = {
@@ -299,11 +303,11 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   }
   
   /**
-   * Updates the value of each vertex v by aggregating the values of v's neighbors in the specified
-   * direction. Only the vertices which evaluate to true on the given vertex predicate are updated.
-   * Other vertices remain unchanged. And only the values of those neighbors which evaluate to true
-   * on the given neighbor predicate are aggregated. Used in algorithms like one iteration of pagerank,
-   * hits, conductance, and others.
+   * Updates the value of each vertex v, for which vPred evaluates to true, by aggregating the values of v's
+   * neighbors in the specified direction. Only the vertices which evaluate to true on the given vertex
+   * predicate are updated. Other vertices remain unchanged. And only the values of those neighbors which
+   * evaluate to true on the given neighbor predicate are aggregated. Used in algorithms like one iteration
+   * of pagerank, hits, conductance, and others.
    * 
    * @param edgeDirection the direction along which to collect the local edges
    * @param nbrPred selects which neighbors' values to aggregate
@@ -311,8 +315,10 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param aggregatedValueF extracts the relevant part of v's neighbor's value that
    *        is needed to update v
    * @param aggregateF aggregates two neighbor's values
-   * @param udpateF given a vertex v's id, value and the aggregated values of v's neighbors
+   * @param updateF given a vertex v's id, value and the aggregated values of v's neighbors
    *        returns a new value for v.
+   * 
+   * @return the resulting graph at the end of the computation
    */
   def aggregateNeighborValues[U: ClassTag](edgeDirection: EdgeDirection,
     nbrPred: (VertexId, VD) => Boolean, vPred: (VertexId, VD) => Boolean, 
@@ -387,8 +393,10 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @param propagateAlongEdgeF given the output of propagatedValueF and an edge to propagate the value
    * 		from, possibly returns a modified value to propagate along the edge
    * @param aggregateF aggregates two values that are being propagated to the same vertex
-   * @param udpateF given a vertex v's id, value and the aggregation of the propagated values to v, returns a
+   * @param updateF given a vertex v's id, value and the aggregation of the propagated values to v, returns a
    *        new value for v.
+   * 
+   * @return the resulting graph at the end of the computation
    */
   def propagateAndAggregate[U: ClassTag](edgeDirection: EdgeDirection, startVPred: (VertexId, VD) => Boolean,
     propagatedValueF: (VertexId, VD) => U, propagateAlongEdgeF: (U, ED) => U, aggregateF: (U, U) => U,
@@ -465,6 +473,79 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
       }
   }
 
+  /**
+   * Vertices store a pointer (actually an ID of) another vertex, not necessarily a neighbor, in their
+   * values. If v points at w, and vPred(v) returns true, then v updates the value of w using v's value.
+   * This operation appears often in matching algorithms.
+   * 
+   * @param vPred selects which vertices will update the vertices they point to
+   * @param idF given a vertex v's id and its value extracts the id of the vertex w that v points to
+   * @param relevantValueF extracts the relevant part from v's value to update the vertex w that v points to
+   * @param aggregateRelevantValuesF if more than one vertices are trying to update a vertex w, then
+   *        aggregates the relevant values from those vertices
+   *        Warning: aggregateRelevantValuesF is called only if there are two or more values mapped.
+   * @param updateF given a vertex v's id, value and the aggregated value from the vertices that want to
+   *        update v, returns a new value for v
+   * 
+   * @return the resulting graph at the end of the computation
+   */
+  def updateAnotherVertexUsingSelf[U: ClassTag](vPred: (VertexId, VD) => Boolean,
+    idF: (VertexId, VD) => VertexId, relevantValueF: (VertexId, VD) => U,
+    aggregateRelevantValuesF: List[U] => U,
+    updateF: (VertexId, VD, U) => VD): Graph[VD, ED] = {
+    val messages = graph.vertices.flatMap(vidVvals => {
+      if (vPred(vidVvals._1, vidVvals._2)) {
+        Iterator((idF(vidVvals._1, vidVvals._2), List(relevantValueF(vidVvals._1, vidVvals._2))))
+      }
+      else Iterator.empty
+    }).reduceByKey(_ ::: _)
+      .map(vidListOfValues => (vidListOfValues._1,
+        if (vidListOfValues._2.size > 1) aggregateRelevantValuesF(vidListOfValues._2)
+        else vidListOfValues._2(0)))
+    graph.outerJoinVertices(messages) { (vid, old, newOpt) =>
+      if (newOpt.isDefined) updateF(vid, old, newOpt.get) else old }
+  }
+  
+  /**
+   * Similar to updateAnotherVertexUsingSelf, except now vertices update themselves using a value
+   * from the vertices that they point to. Since now each vertex is updated by exactly one vertex,
+   * we do not need an aggregation function. Again used in some matching algorithms, but also in pointer
+   * jumping operations found in Boruvka's minimum spanning tree, METIS, and some multi-level clustering
+   * algorithms. 
+   * 
+   * @param vPred selects which vertices will update themselves using the vertices they point to
+   * @param idF given a vertex v's id and its value extracts the id of the vertex w that v points to
+   * @param relevantValueF extracts the relevant part from the vertex w that v points to, to update v's value.
+   * @param updateF given a vertex v's id, value and the value extracted from the vertex w that v points to,
+   *        returns a new value for v
+   * 
+   * @return the resulting graph at the end of the computation
+   */
+  def updateSelfUsingAnotherVertex[U: ClassTag](vPred: (VertexId, VD) => Boolean,
+    idF: (VertexId, VD) => VertexId, relevantValueF: (VertexId, VD) => U, 
+    updateF: (VertexId, VD, U) => VD): Graph[VD, ED] = {
+    val verticesPointingToEachVertex = graph.vertices.flatMap(vidVvals => {
+      if (vPred(vidVvals._1, vidVvals._2)) {
+        Iterator((idF(vidVvals._1, vidVvals._2), List(vidVvals._1)))
+      } else Iterator.empty
+    }).reduceByKey(_ ::: _)
+    val messages = VertexRDD(graph.vertices.join(verticesPointingToEachVertex).flatMap(
+      vidVvalsAndPointingVertices => {
+        val vid = vidVvalsAndPointingVertices._1
+        val vvals = vidVvalsAndPointingVertices._2._1
+        val pointingVertices = vidVvalsAndPointingVertices._2._2
+        if (pointingVertices.isEmpty) Iterator.empty
+        else {
+          var msgsToSend: List[(VertexId, U)] = List()
+          val msgToSend = relevantValueF(vid, vvals)
+          for (pointingVertex <- pointingVertices) { msgsToSend ::= (pointingVertex, msgToSend)}
+          msgsToSend
+        }
+      }))
+    graph.outerJoinVertices(messages) { (vid, old, newOpt) =>
+      if (newOpt.isDefined) updateF(vid, old, newOpt.get) else old }
+  }
+  
   /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
    * user-defined vertex-program `vprog` is executed in parallel on

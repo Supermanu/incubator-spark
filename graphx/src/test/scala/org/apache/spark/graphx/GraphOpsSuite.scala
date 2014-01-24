@@ -433,62 +433,61 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
   }
 
   test("propagateAndAggregateDirectionOut") {
-       withSpark { sc =>
-        // We are propagating towards out neighbors. Therefore, when the aggregation is the max, 
-        // 1 and 2 should update their values to 3 and 4, respectively, and others should remain unchanged.
-        val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
-          EdgeDirection.Out, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
-          (a, b) => Math.max(a, b),
-          (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
-        assert(5 == resultGraph.numVertices)
-        assert(4 == resultGraph.numEdges)
-        resultGraph.vertices.collect.foreach {
-          case (vid, value) =>
-            if (vid == 0) assert(0 == value)
-            else if (vid == 1) assert(3 == value)
-            else if (vid == 2) assert(4 == value)
-            else if (vid == 3) assert(3 == value)
-            else if (vid == 4) assert(4 == value)
-        }
+    withSpark { sc =>
+      // We are propagating towards out neighbors. Therefore, when the aggregation is the max, 
+      // 1 and 2 should update their values to 3 and 4, respectively, and others should remain unchanged.
+      val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+        EdgeDirection.Out, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
+        (a, b) => Math.max(a, b),
+        (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
+      assert(5 == resultGraph.numVertices)
+      assert(4 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(0 == value)
+          else if (vid == 1) assert(3 == value)
+          else if (vid == 2) assert(4 == value)
+          else if (vid == 3) assert(3 == value)
+          else if (vid == 4) assert(4 == value)
       }
     }
-  
-    test("propagateAndAggregateDirectionEither") {
-       withSpark { sc =>
-        // We are propagating towards all neighbors. Therefore, when the aggregation is the max, 
-        // every vertex value should be 4 in the end.
-        val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
-          EdgeDirection.Either, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
-          (a, b) => Math.max(a, b),
-          (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
-        assert(5 == resultGraph.numVertices)
-        assert(4 == resultGraph.numEdges)
-        resultGraph.vertices.collect.foreach { case (vid, value) => assert(4 == value) }
+  }
+
+  test("propagateAndAggregateDirectionEither") {
+    withSpark { sc =>
+      // We are propagating towards all neighbors. Therefore, when the aggregation is the max, 
+      // every vertex value should be 4 in the end.
+      val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+        EdgeDirection.Either, (vid, vvals) => true, (vid, vval) => vval, (vval, eval) => vval,
+        (a, b) => Math.max(a, b),
+        (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
+      assert(5 == resultGraph.numVertices)
+      assert(4 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach { case (vid, value) => assert(4 == value) }
+    }
+  }
+
+  test("propagateAndAggregateStartVertexPredicate") {
+    withSpark { sc =>
+      // We are propagating towards out neighbors, starting from vertex 3. Therefore, when the aggregation is the max, 
+      // 1 should update its value to 3 and others should remain unchanged.
+      val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
+        EdgeDirection.Out,
+        (vid, vvals) => (vid == 3) /* only start from vertex 3 */ ,
+        (vid, vval) => vval, (vval, eval) => vval, (a, b) => Math.max(a, b),
+        (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
+      assert(5 == resultGraph.numVertices)
+      assert(4 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) assert(0 == value)
+          else if (vid == 1) assert(3 == value)
+          else if (vid == 2) assert(2 == value)
+          else if (vid == 3) assert(3 == value)
+          else if (vid == 4) assert(4 == value)
       }
     }
-  
-    test("propagateAndAggregateStartVertexPredicate") {
-       withSpark { sc =>
-        // We are propagating towards out neighbors, starting from vertex 3. Therefore, when the aggregation is the max, 
-        // 1 should update its value to 3 and others should remain unchanged.
-        val resultGraph = getGraphForPropagateAndAggregateTest(sc).propagateAndAggregate[Int](
-          EdgeDirection.Out,
-          (vid, vvals) => (vid == 3) /* only start from vertex 3 */,
-          (vid, vval) => vval, (vval, eval) => vval, (a, b) => Math.max(a, b),
-          (vid, vval, propagatedVal) => Math.max(vval, propagatedVal))
-        assert(5 == resultGraph.numVertices)
-        assert(4 == resultGraph.numEdges)
-        resultGraph.vertices.collect.foreach {
-          case (vid, value) =>
-            if (vid == 0) assert(0 == value)
-            else if (vid == 1) assert(3 == value)
-            else if (vid == 2) assert(2 == value)
-            else if (vid == 3) assert(3 == value)
-            else if (vid == 4) assert(4 == value)
-        }
-      }
-    }
-    
+  }
 
   test("propagateAndAggregateDirectionPropagateWithEdgeDistances") {
     withSpark { sc =>
@@ -523,6 +522,177 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
     }
   }
 
+  test("updateAnotherVertexUsingSelfAllPointingToDifferentVertices") {
+    withSpark { sc =>
+      // Each vertex v, updates its pointer w's first field to the v.id. E.g., we expect the first
+      // field of 0 to be 3, because 3 is the vertex that points at 0. The second fields stay
+      // the same, the vertex that v points 0. E.g. we expect the second field of 0 to remain as 1. 
+      val resultGraph = getGraphForUpdateVertexUsingOneOtherVertex(sc).updateAnotherVertexUsingSelf[Long](
+        (vid, vvals) => true,
+        (vid, vvals) => vvals._2,
+        (vid, vvals) => vid,
+        valueList => valueList(0),
+        (vid, vvals, relevantValue) => (relevantValue, vvals._2))
+      assert(5 == resultGraph.numVertices)
+      assert(7 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) { assert(3L == value._1); assert(1L == value._2) }
+          else if (vid == 1) { assert(0L == value._1); assert(2L == value._2) }
+          else if (vid == 2) { assert(1L == value._1); assert(4L == value._2) }
+          else if (vid == 3) { assert(4L == value._1); assert(0L == value._2) }
+          else if (vid == 4) { assert(2L == value._1); assert(3L == value._2) }
+      }
+    }
+  }
+
+  test("updateAnotherVertexUsingSelfVPred") {
+    withSpark { sc =>
+      // Same as the test above (updateAnotherVertexUsingSelfAllPointingToDifferentVertices), but
+      // the update is now done only by vertices with id >= 2. Therefore, now vertices 1 and 2's first
+      // fields remain as -2.
+      val resultGraph = getGraphForUpdateVertexUsingOneOtherVertex(sc).updateAnotherVertexUsingSelf[Long](
+        (vid, vvals) => vid >= 2,
+        (vid, vvals) => vvals._2,
+        (vid, vvals) => vid,
+        valueList => valueList(0),
+        (vid, vvals, relevantValue) => (relevantValue, vvals._2))
+      assert(5 == resultGraph.numVertices)
+      assert(7 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) { assert(3L == value._1); assert(1L == value._2) }
+          else if (vid == 1) { assert(-2L == value._1); assert(2L == value._2) }
+          else if (vid == 2) { assert(-2L == value._1); assert(4L == value._2) }
+          else if (vid == 3) { assert(4L == value._1); assert(0L == value._2) }
+          else if (vid == 4) { assert(2L == value._1); assert(3L == value._2) }
+      }
+    }
+  }
+
+  test("updateAnotherVertexUsingSelfAggregateRelevantValuesF") {
+    withSpark { sc =>
+      // 6 vertices. The edges are irrelevant for this primitive but here are the 8 edges for reference:
+      // 0 -> 1, 0 -> 2, 1 -> 0, 2 -> 0, 2 -> 1, 3 -> 4, 4 -> 5, 5 -> 0
+      val edges = sc.parallelize((1 to 1).flatMap(x => {
+        Vector(Edge(0, 1, -1), Edge(0, 2, -1), Edge(1, 0, -1), Edge(2, 0, -1), Edge(2, 1, -1), Edge(3, 4, -1),
+          Edge(4, 5, -1), Edge(5, 0, -1))
+      }))
+      // Vertex values have two fields, the first is set to -2 for all, and the second are the pointers
+      // to other vertices: 0 to 2, 1 to 2, 2 to 0, 3 to 1, 4 to 2, 5 to 1
+      val vertices = sc.parallelize((0 to 5).map(vid => {
+        var pointedVertex = -1
+        if (vid == 0) pointedVertex = 2
+        else if (vid == 1) pointedVertex = 2
+        else if (vid == 2) pointedVertex = 0
+        else if (vid == 3) pointedVertex = 1
+        else if (vid == 4) pointedVertex = 2
+        else if (vid == 5) pointedVertex = 1
+        (vid: VertexId, (-2L, pointedVertex))
+      }))
+      val graph = Graph(vertices, edges).cache()
+
+      // Each vertex v, updates its pointer w's first field to the v.id and the mergeF takes the
+      // minimum of the updated values. E.g., 2 should be set to 0, and 1 should be set to 3.
+      // We also test that the aggregation function is called only when there are at least two vertices
+      // updating a vertex.
+      val resultGraph = graph.updateAnotherVertexUsingSelf[Long](
+        (vid, vvals) => true,
+        (vid, vvals) => vvals._2,
+        // here's the aggregation function we are testing
+        (vid, vvals) => vid,
+        valueList => {
+          if (valueList.length <= 1) { -3L }
+          else {
+            var minValue = Long.MaxValue
+            for (value <- valueList) minValue = Math.min(minValue, value)
+            minValue
+          }
+        },
+        (vid, vvals, relevantValue) => (relevantValue, vvals._2))
+      assert(6 == resultGraph.numVertices)
+      assert(8 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) { assert(2 == value._1); assert(2 == value._2) }
+          else if (vid == 1) { assert(3 == value._1); assert(2 == value._2) }
+          else if (vid == 2) { assert(0 == value._1); assert(0 == value._2) }
+          else if (vid == 3) { assert(-2 == value._1); assert(1 == value._2) }
+          else if (vid == 4) { assert(-2 == value._1); assert(2 == value._2) }
+          else if (vid == 5) { assert(-2 == value._1); assert(1 == value._2) }
+      }
+    }
+  }
+
+  test("updateSelfUsingAnotherVertexAllPointingToDifferentVertices") {
+    withSpark { sc =>
+      // Each vertex v, updates its first field to its pointer w's id. E.g., we expect the first
+      // field of 0 to be 1, because 0 points at 1. The second fields stay the same, therefore the
+      // final value of 0 will be (1, 1). In particular the final value of all vertices will be
+      // (pointedVertex, pointedVertex). 
+      val resultGraph = getGraphForUpdateVertexUsingOneOtherVertex(sc).updateSelfUsingAnotherVertex[Long](
+        (vid, vvals) => true,
+        (vid, vvals) => vvals._2,
+        (vid, vvals) => vid,
+        (vid, vvals, relevantValue) => (relevantValue, vvals._2))
+      assert(5 == resultGraph.numVertices)
+      assert(7 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) { assert(1L == value._1); assert(1L == value._2) }
+          else if (vid == 1) { assert(2L == value._1); assert(2L == value._2) }
+          else if (vid == 2) { assert(4L == value._1); assert(4L == value._2) }
+          else if (vid == 3) { assert(0L == value._1); assert(0L == value._2) }
+          else if (vid == 4) { assert(3L == value._1); assert(3L == value._2) }
+      }
+    }
+  }
+
+  test("updateSelfUsingAnotherVertexVPred") {
+    withSpark { sc =>
+      // Same as the test above (updateSelfUsingAnotherVertexAllPointingToDifferentVertices), but
+      // the update is now done only by vertices with id >= 2. Therefore, now vertices 0 and 1's first
+      // fields remain as -2.
+      val resultGraph = getGraphForUpdateVertexUsingOneOtherVertex(sc).updateSelfUsingAnotherVertex[Long](
+        (vid, vvals) => vid >= 2,
+        (vid, vvals) => vvals._2,
+        (vid, vvals) => vid,
+        (vid, vvals, relevantValue) => (relevantValue, vvals._2))
+      assert(5 == resultGraph.numVertices)
+      assert(7 == resultGraph.numEdges)
+      resultGraph.vertices.collect.foreach {
+        case (vid, value) =>
+          if (vid == 0) { assert(-2L == value._1); assert(1L == value._2) }
+          else if (vid == 1) { assert(-2L == value._1); assert(2L == value._2) }
+          else if (vid == 2) { assert(4L == value._1); assert(4L == value._2) }
+          else if (vid == 3) { assert(0L == value._1); assert(0L == value._2) }
+          else if (vid == 4) { assert(3L == value._1); assert(3L == value._2) }
+      }
+    }
+  }
+
+  private def getGraphForUpdateVertexUsingOneOtherVertex(sc: SparkContext): Graph[(Long, Long), Int] = {
+    // 5 vertices. The edges are irrelevant for this primitive but here are the 7 edges for reference:
+    // 0 -> 1, 0 -> 2, 1 -> 0, 2 -> 0, 2 -> 1, 3->4, 4->3
+    // So the graph is disconnected (0, 1, 2) and (3, 4) are the components
+    val edges = sc.parallelize((1 to 1).flatMap(x => {
+      Vector(Edge(0, 1, -1), Edge(0, 2, -1), Edge(1, 0, -1), Edge(2, 0, -1), Edge(2, 1, -1), Edge(3, 4, -1),
+        Edge(4, 3, -1))
+    }))
+    // Vertex values have two fields, the first is set to -2 for all, and the second are the pointers to
+    // other vertices: 0 points to 1, 1 points to 2, 2 points to 4, 3 points to 0, 4 points to 3
+    val vertices = sc.parallelize((0 to 4).map(vid => {
+      var pointedVertex = -1L
+      if (vid == 0) pointedVertex = 1L
+      else if (vid == 1) pointedVertex = 2L
+      else if (vid == 2) pointedVertex = 4L
+      else if (vid == 3) pointedVertex = 0L
+      else if (vid == 4) pointedVertex = 3L
+      (vid: VertexId, (-2L, pointedVertex))
+    }))
+    Graph(vertices, edges).cache()
+  }
+
   private def getGraphForPropagateAndAggregateTest(sc: SparkContext): Graph[Int, Int] = {
     // 5 vertices that form a tree. 0 is the root pointing at 3 and 4. 1 is 3's child and
     // 2 is 4's child. As a result, there is a total of 4 edges.
@@ -546,17 +716,17 @@ class GraphOpsSuite extends FunSuite with LocalSparkContext {
   }
 
   private def getCycleGraph(sc: SparkContext, numVertices: Int): Graph[Double, Int] = {
-    val cycle = (0 until numVertices).map(x => (x, (x+1)%numVertices))
+    val cycle = (0 until numVertices).map(x => (x, (x + 1) % numVertices))
     getGraphFromSeq(sc, cycle)
   }
-  
+
   private def getChainGraph(sc: SparkContext, numVertices: Int): Graph[Double, Int] = {
-    val chain = (0 until numVertices-1).map(x => (x, (x+1)))
+    val chain = (0 until numVertices - 1).map(x => (x, (x + 1)))
     getGraphFromSeq(sc, chain)
   }
-  
+
   private def getGraphFromSeq(sc: SparkContext, seq: IndexedSeq[(Int, Int)]): Graph[Double, Int] = {
-    val rawEdges = sc.parallelize(seq, 3).map { case (s,d) => (s.toLong, d.toLong) }
+    val rawEdges = sc.parallelize(seq, 3).map { case (s, d) => (s.toLong, d.toLong) }
     Graph.fromEdgeTuples(rawEdges, 1.0).cache()
   }
 }
