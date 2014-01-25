@@ -597,6 +597,46 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   }
 
   /**
+   * Given a graph, forms a new graph by merging vertices into supervertices. Appears in multi-level
+   * graph algorithms as well as in Boruvka's minimum spanning tree. Here's the typical scenario when
+   * this primitive is used:
+   * (1) After some computation in the algorithm, every vertex identifies the supervertex (possibly itself)
+   * that it will merge into. This is extracted from the vertex by calling the supervertexIdFieldF argument.
+   * (2) All vertices and their values that belong to the same supervertex are merged into a single vertex.
+   *     How the vertex values are merged is algorithm-specific is specified in the vertexAggrF argument.
+   * (3) Consider an edge (u, v) and assume that vertices u and v are merged into supervertices s1 and s2,
+   *     respectively. If s1 = s2, then (u, v) is removed from the graph. Otherwise, (u, v) becomes an edge
+   *     between s1 and s2. If there are multiple edges between s1 and s2, then edges are merged. How the
+   *     edge values are merged is algorithm-specific and specified in the edgeAggrF argument.
+   *
+   * Note: If the users do not want to remove self loops, i.e., the case when s1 == s2, then we can simply
+   * add a new boolean argument removeSelfLoops to this function.
+   *
+   * @param supervertexIdFieldF given a vertex v's id and attribute, extracts the supervertexId of v
+   * @param vertexAggrF given the list of values of all the vertices that will merge into the same
+   *                    supervertex, returns the single merged value of the supervertex
+   * @param edgeAggrF given a list of edges between the same two supervertices, merges them to form a single
+   *                  supervertex
+   *
+   * @return the resulting graph consisting of supervertices and the merged edges between them
+   */
+  def formSupervertices(supervertexIdFieldF: (VertexId, VD) => VertexId, vertexAggrF: Seq[VD] => VD,
+    edgeAggrF: Seq[ED] => ED): Graph[VD, ED] = {
+    val vertexRDD = graph.vertices.map(vidVvals => (supervertexIdFieldF(vidVvals._1, vidVvals._2),
+      vidVvals._2)).groupByKey().map(v => (v._1, vertexAggrF(v._2)))
+    val edgeRDD = graph.triplets.flatMap(triplet => {
+      val newSrcId = supervertexIdFieldF(triplet.srcId, triplet.srcAttr)
+      val newDstId = supervertexIdFieldF(triplet.dstId, triplet.dstAttr)
+      if (newSrcId == newDstId) {
+        Iterator.empty
+      } else {
+        Iterator(((newSrcId, newDstId), triplet.attr))
+      }
+    }).groupByKey().map(e => new Edge(e._1._1, e._1._2, edgeAggrF(e._2)))
+    Graph(vertexRDD, edgeRDD)
+  }
+
+  /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
    * user-defined vertex-program `vprog` is executed in parallel on
    * each vertex receiving any inbound messages and computing a new
