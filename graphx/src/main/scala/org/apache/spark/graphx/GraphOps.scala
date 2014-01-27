@@ -153,8 +153,6 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @return the local edges for each vertex
    */
   def collectEdges(edgeDirection: EdgeDirection): VertexRDD[Array[Edge[ED]]] = {
-    //        val msgToSrc = (edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))
-    //        val msgToDst = (edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))
     edgeDirection match {
       case EdgeDirection.Either =>
         graph.mapReduceTriplets[Array[Edge[ED]]](
