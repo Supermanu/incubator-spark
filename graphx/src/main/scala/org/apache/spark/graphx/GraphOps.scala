@@ -136,9 +136,9 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
       nbrsOpt.getOrElse(Array.empty[(VertexId, VD)])
     }
   } // end of collectNeighbor
-  
- /**
-   * Returns an RDD that contains for each vertex v its local edges, 
+
+  /**
+   * Returns an RDD that contains for each vertex v its local edges,
    * i.e., the edges that are incident on v, in the user-specified direction.
    * Warning: note that singleton vertices, those with no edges in the given
    * direction will not be part of the return value.
@@ -153,20 +153,26 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * @return the local edges for each vertex
    */
   def collectEdges(edgeDirection: EdgeDirection): VertexRDD[Array[Edge[ED]]] = {
-    graph.mapReduceTriplets[Array[Edge[ED]]](
-      edge => {
-        val msgToSrc = (edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))
-        val msgToDst = (edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))
-        edgeDirection match {
-          case EdgeDirection.Either => Iterator(msgToSrc, msgToDst)
-          case EdgeDirection.In => Iterator(msgToDst)
-          case EdgeDirection.Out => Iterator(msgToSrc)
-          case EdgeDirection.Both =>
-            throw new SparkException("collectEdges does not support EdgeDirection.Both. Use" +
-              "EdgeDirection.Either instead.")
-        }
-      },
-      (a, b) => a ++ b)
+    //        val msgToSrc = (edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))
+    //        val msgToDst = (edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))
+    edgeDirection match {
+      case EdgeDirection.Either =>
+        graph.mapReduceTriplets[Array[Edge[ED]]](
+          edge => Iterator((edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr))),
+                           (edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))),
+          (a, b) => a ++ b)
+      case EdgeDirection.In =>
+        graph.mapReduceTriplets[Array[Edge[ED]]](
+          edge => Iterator((edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))),
+          (a, b) => a ++ b)
+      case EdgeDirection.Out =>
+        graph.mapReduceTriplets[Array[Edge[ED]]](
+          edge => Iterator((edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))),
+          (a, b) => a ++ b)
+      case EdgeDirection.Both =>
+        throw new SparkException("collectEdges does not support EdgeDirection.Both. Use" +
+          "EdgeDirection.Either instead.")
+    }
   }
 
   /**
