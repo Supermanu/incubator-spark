@@ -285,6 +285,17 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * takes as input the vertexID, vertex value, and a list of edges of the vertex in
    * the user-specified direction 
    *
+   * @Warning: This functionality of this function can be achieved more efficiently by using
+   * mapReduceTriplets, if the values on the edges of vertices can be aggregated with an associative
+   * and commutative function. For example, if we want to udpate the value of each vertex v by
+   * setting the maxInEdge field of v's value to the maximum in-coming edge it has, this computation can be
+   * expressed in two ways:
+   * 1) g.mapNeighborhoods(EdgeDirection.In, (vid, vvalue, inedges) => vvalue.maxInEdge = max(inedges)}
+   * 2) val messages = g.mapReduceTriplets(triplet => (triplet.srcId, triplet.attr), (a, b) => Math.max(a, b))
+   *    g.vertices.outherJoin(messages)((vid, vvalue, maxEdge) => vvalue.maxInEdge = maxEdge)
+   * Prefer the 2nd method for efficiency. For non-commutative operations or non-associative operations or 
+   * for operations that are difficult to write in a commutative/associative way, prefer the 1st method.
+   * 
    * @note The new graph has the same structure.  As a consequence the underlying index structures
    * can be reused.
    *
@@ -295,7 +306,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * 
    * @return the resulting graph at the end of the computation
    */
-  def mapVerticesUsingLocalEdges[VD2: ClassTag](edgeDirection: EdgeDirection,
+  def mapNeighborhoods[VD2: ClassTag](edgeDirection: EdgeDirection, 
     f: (VertexId, VD, Array[Edge[ED]]) => VD2): Graph[VD2, ED] = {
     val localEdges = collectEdges(edgeDirection)
     graph.outerJoinVertices(localEdges) { (vid, vdata, localEdgesOpt) => 
