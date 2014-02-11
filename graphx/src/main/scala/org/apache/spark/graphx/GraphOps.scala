@@ -18,11 +18,11 @@
 package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkException
 import org.apache.spark.graphx.lib._
 import org.apache.spark.rdd.RDD
+import scala.util.Random
 
 /**
  * Contains additional functionality for [[Graph]]. All operations are expressed in terms of the
@@ -172,7 +172,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
           "EdgeDirection.Either instead.")
     }
   }
-
+ 
   /**
    * Join the vertices with an RDD and then apply a function from the
    * the vertex and RDD entry to a new vertex value.  The input table
@@ -243,6 +243,27 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
       epred: (EdgeTriplet[VD2, ED2]) => Boolean = (x: EdgeTriplet[VD2, ED2]) => true,
       vpred: (VertexId, VD2) => Boolean = (v:VertexId, d:VD2) => true): Graph[VD, ED] = {
     graph.mask(preprocess(graph).subgraph(epred, vpred))
+  }
+
+  /**
+   * Picks a random vertex from the graph and returns its ID.
+   */
+  def pickRandomVertex(): VertexId = {
+    val probability = 50 / graph.numVertices
+    var found = false
+    var retVal: VertexId = null.asInstanceOf[VertexId]
+    while (!found) {
+      val selectedVertices = graph.vertices.flatMap { vidVvals =>
+        if (Random.nextDouble() < probability) { Some(vidVvals._1) }
+        else { None }
+      }
+      if (selectedVertices.count > 1) {
+        found = true
+        val collectedVertices = selectedVertices.collect()
+        retVal = collectedVertices(Random.nextInt(collectedVertices.size))
+      }
+    }
+   retVal    	  
   }
 
   /**
