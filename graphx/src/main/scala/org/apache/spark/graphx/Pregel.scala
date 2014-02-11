@@ -18,7 +18,7 @@
 package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
-
+import org.apache.spark.SparkException
 
 /**
  * Implements a Pregel-like bulk-synchronous message-passing API.
@@ -118,16 +118,51 @@ object Pregel {
       mergeMsg: (A, A) => A)
     : Graph[VD, ED] =
   {
-    var g = graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg)).cache()
+    runExtendedPregel(graph, Some(initialMsg), maxIterations, activeDirection)(vprog, 
+      (edgeTriplet, isStarting) => sendMsg(edgeTriplet), mergeMsg,
+      false /* do not skip initial stage */, (vid, vdata) => true /* start from all vertices */)
+  } // end of apply
+
+  def runExtendedPregel[VD: ClassTag, ED: ClassTag, A: ClassTag]
+     (graph: Graph[VD, ED],
+      initialMsg: Option[A],
+      maxIterations: Int = Int.MaxValue,
+      activeDirection: EdgeDirection = EdgeDirection.Either)
+     (vprog: (VertexId, VD, A) => VD,
+      sendMsg: (EdgeTriplet[VD, ED], Boolean) => Iterator[(VertexId, A)],
+      mergeMsg: (A, A) => A,
+      forPropagateAndAggregate: Boolean,
+      startVPred: (VertexId, VD) => Boolean)
+    : Graph[VD, ED] = {
+    var g = if(forPropagateAndAggregate) graph else graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg.get)).cache()
     // compute the messages
-    var messages = g.mapReduceTriplets(sendMsg, mergeMsg)
+    var messages = g.mapReduceTriplets(edge => sendMsg(edge, true /* is starting */)
+//         activeDirection match {
+//          case EdgeDirection.Either => {
+//            if (startVPred(edge.srcId, edge.srcAttr) || startVPred(edge.dstId, edge.dstAttr))
+//              sendMsg(edge)
+//            else Iterator.empty
+//          }
+//          case EdgeDirection.In => if (startVPred(edge.dstId, edge.dstAttr)) sendMsg(edge) else Iterator.empty
+//          case EdgeDirection.Out => if (startVPred(edge.srcId, edge.srcAttr)) sendMsg(edge) else Iterator.empty
+//          case EdgeDirection.Both =>
+//            throw new SparkException("runExtendedPregel does not support EdgeDirection.Both. Use" +
+//              "EdgeDirection.Either instead.")
+//        }}
+    , mergeMsg)
     var activeMessages = messages.count()
     // Loop
     var prevG: Graph[VD, ED] = null
     var i = 0
     while (activeMessages > 0 && i < maxIterations) {
       // Receive the messages. Vertices that didn't get any messages do not appear in newVerts.
-      val newVerts = g.vertices.innerJoin(messages)(vprog).cache()
+      var newVerts = g.vertices.innerJoin(messages)(vprog).cache()
+      // In PropagateAndAggregate the aggregation continues only from vertices whose values have
+      // changed
+      if (forPropagateAndAggregate) {
+        newVerts = g.vertices.diff(newVerts)
+        println("newVerts: " + newVerts.collect.deep.mkString("\n"))
+      }
       // Update the graph with the new vertices.
       prevG = g
       g = g.outerJoinVertices(newVerts) { (vid, old, newOpt) => newOpt.getOrElse(old) }
@@ -137,7 +172,7 @@ object Pregel {
       // Send new messages. Vertices that didn't get any messages don't appear in newVerts, so don't
       // get to send messages. We must cache messages so it can be materialized on the next line,
       // allowing us to uncache the previous iteration.
-      messages = g.mapReduceTriplets(sendMsg, mergeMsg, Some((newVerts, activeDirection))).cache()
+      messages = g.mapReduceTriplets(edge => sendMsg(edge, false /* not starting */), mergeMsg, Some((newVerts, activeDirection))).cache()
       // The call to count() materializes `messages`, `newVerts`, and the vertices of `g`. This
       // hides oldMessages (depended on by newVerts), newVerts (depended on by messages), and the
       // vertices of prevG (depended on by newVerts, oldMessages, and the vertices of g).
@@ -149,8 +184,6 @@ object Pregel {
       // count the iteration
       i += 1
     }
-
     g
-  } // end of apply
-
+  }
 } // end of class Pregel

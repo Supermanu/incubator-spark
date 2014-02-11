@@ -285,6 +285,24 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   }
 
   /**
+   * Transforms each vertex attribute in the graph using the updateF function. It takes as input
+   * a predicate which filters the vertices that should be updated and an updateF function to
+   * update those vertices.
+   * 
+   * @note The new graph has the same structure.  As a consequence the underlying index structures
+   * can be reused.
+   *
+   * @param vP predicate to select which vertices to udpate
+   * @param updateF the function from a vertexID, vertex value, and a list of edges to a new vertex value
+   * 
+   * @return the resulting graph at the end of the computation
+   */
+  def updateVertices(vP: (VertexId, VD) => Boolean,
+    updateF: (VertexId, VD) => VD): Graph[VD, ED] = {
+    graph.mapVertices((vid, vdata) => if (vP(vid, vdata)) updateF(vid, vdata) else vdata)    
+  }
+  
+  /**
    * Transforms each vertex attribute in the graph using the map function, which
    * takes as input the vertexID, vertex value, and a list of edges of the vertex in
    * the user-specified direction 
@@ -310,7 +328,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
    * 
    * @return the resulting graph at the end of the computation
    */
-  def mapNeighborhoods[VD2: ClassTag](edgeDirection: EdgeDirection, 
+  def updateVerticesUsingLocalEdges[VD2: ClassTag](edgeDirection: EdgeDirection, 
     f: (VertexId, VD, Array[Edge[ED]]) => VD2): Graph[VD2, ED] = {
     val localEdges = collectEdges(edgeDirection)
     graph.outerJoinVertices(localEdges) { (vid, vdata, localEdgesOpt) => 
@@ -573,7 +591,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   def aggregateGlobalValue[U: ClassTag](mapF: ((VertexId, VD)) => U, reduceF: (U, U) => U): U = {
     graph.vertices.map[U](mapF).reduce(reduceF)
   }
-  
+
   /**
    * Similar to aggregateGlobalValue, except the map function also takes as input the edges incident to
    * each vertex in the specified direction.
