@@ -138,6 +138,42 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
   } // end of collectNeighbor
 
   /**
+   * Returns an RDD that contains for each vertex v its local edges,
+   * i.e., the edges that are incident on v, in the user-specified direction.
+   * Warning: note that singleton vertices, those with no edges in the given
+   * direction will not be part of the return value.
+   *
+   * @note This function could be highly inefficient on power-law
+   * graphs where high degree vertices may force a large amount of
+   * information to be collected to a single location.
+   *
+   * @param edgeDirection the direction along which to collect
+   * the local edges of vertices
+   *
+   * @return the local edges for each vertex
+   */
+  def collectEdges(edgeDirection: EdgeDirection): VertexRDD[Array[Edge[ED]]] = {
+    edgeDirection match {
+      case EdgeDirection.Either =>
+        graph.mapReduceTriplets[Array[Edge[ED]]](
+          edge => Iterator((edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr))),
+                           (edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))),
+          (a, b) => a ++ b)
+      case EdgeDirection.In =>
+        graph.mapReduceTriplets[Array[Edge[ED]]](
+          edge => Iterator((edge.dstId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))),
+          (a, b) => a ++ b)
+      case EdgeDirection.Out =>
+        graph.mapReduceTriplets[Array[Edge[ED]]](
+          edge => Iterator((edge.srcId, Array(new Edge(edge.srcId, edge.dstId, edge.attr)))),
+          (a, b) => a ++ b)
+      case EdgeDirection.Both =>
+        throw new SparkException("collectEdges does not support EdgeDirection.Both. Use" +
+          "EdgeDirection.Either instead.")
+    }
+  }
+
+  /**
    * Join the vertices with an RDD and then apply a function from the
    * the vertex and RDD entry to a new vertex value.  The input table
    * should contain at most one entry for each vertex.  If no entry is
