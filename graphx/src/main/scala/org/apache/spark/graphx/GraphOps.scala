@@ -263,7 +263,7 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
         retVal = collectedVertices(Random.nextInt(collectedVertices.size))
       }
     }
-   retVal    	  
+   retVal
   }
 
   /**
