@@ -18,11 +18,10 @@
 package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.graphx.impl._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-
+import org.apache.spark.graphx.hlp.Primitives
 
 /**
  * The Graph abstractly represents a graph with arbitrary objects
@@ -33,6 +32,8 @@ import org.apache.spark.storage.StorageLevel
  * operations return new graphs.
  *
  * @note [[GraphOps]] contains additional convenience operations and graph algorithms.
+ * @note [[Primitives]] also contains additional convenience operations.
+ * 
  *
  * @tparam VD the vertex attribute type
  * @tparam ED the edge attribute type
@@ -345,6 +346,13 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
   // Save a copy of the GraphOps object so there is always one unique GraphOps object
   // for a given Graph object, and thus the lazy vals in GraphOps would work as intended.
   val ops = new GraphOps(this)
+
+  /**
+   * The associated [[GraphOps]] object.
+   */
+  // Save a copy of the GraphOps object so there is always one unique GraphOps object
+  // for a given Graph object, and thus the lazy vals in GraphOps would work as intended.
+  val primitives = new Primitives(this)
 } // end of Graph
 
 
@@ -420,4 +428,6 @@ object Graph {
    * shared across multiple graph implementations.
    */
   implicit def graphToGraphOps[VD: ClassTag, ED: ClassTag](g: Graph[VD, ED]) = g.ops
+
+  implicit def graphToPrimitives[VD: ClassTag, ED: ClassTag](g: Graph[VD, ED]) = g.primitives
 } // end of Graph object
