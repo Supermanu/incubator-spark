@@ -1,19 +1,19 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+///*
+// * Licensed to the Apache Software Foundation (ASF) under one or more
+// * contributor license agreements.  See the NOTICE file distributed with
+// * this work for additional information regarding copyright ownership.
+// * The ASF licenses this file to You under the Apache License, Version 2.0
+// * (the "License"); you may not use this file except in compliance with
+// * the License.  You may obtain a copy of the License at
+// *
+// *    http://www.apache.org/licenses/LICENSE-2.0
+// *
+// * Unless required by applicable law or agreed to in writing, software
+// * distributed under the License is distributed on an "AS IS" BASIS,
+// * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// * See the License for the specific language governing permissions and
+// * limitations under the License.
+// */
 package org.apache.spark.graphx.hlp.examples
 
 import scala.collection.JavaConversions._
@@ -181,7 +181,7 @@ object Algorithms {
     sc.parallelize(tmpSupervertexIDPartitionID, 4)
   }
 
-  private def coarsenGraph(g: Graph[MetisVertexValue, Double]): (Graph[MetisVertexValue, Double], 
+  private def coarsenGraph(g: Graph[MetisVertexValue, Double]): (Graph[MetisVertexValue, Double],
     Graph[MetisVertexValue, Double]) = {
     var h = g.updateVerticesUsingLocalEdges(
       EdgeDirection.Out,
@@ -462,7 +462,7 @@ object Algorithms {
         }
       } else {
         // When there is a single vertex in the fringe of C or B(u) == twiceEccentricityMinus1
-        // we find the exact diameter, which is equal to the diameter of T_u=lengthOfTreeFromA 
+        // we find the exact diameter, which is equal to the diameter of T_u=lengthOfTreeFromA
         upperBound = lengthOfTreeFromA
         println("found the EXACT diameter with single fringe node. diameter: " + upperBound)
         assert(lowerBound == upperBound)
@@ -476,7 +476,7 @@ object Algorithms {
     println("final lower bound:" + lowerBound + " final upperBound: " + upperBound)
   }
 
-  private def runBfsFromVertexAndCountTheLengthOfTree(g: Graph[Int, Int], src: VertexId): 
+  private def runBfsFromVertexAndCountTheLengthOfTree(g: Graph[Int, Int], src: VertexId):
     (Graph[Int, Int], Int) = {
     var h = g.updateVertices((vid, vdata) => true,
       (vid, vdata) => if (vid == src) 0 else Int.MaxValue)
@@ -532,8 +532,8 @@ object Algorithms {
     sum
   }
 
-  def aggregateSemiClusters(vidVdataEdgesMsgs: (VertexId, List[(Double, Double, List[VertexId])], 
-    Array[Edge[Double]], Option[List[List[(Double, Double, List[VertexId])]]])): 
+  def aggregateSemiClusters(vidVdataEdgesMsgs: (VertexId, List[(Double, Double, List[VertexId])],
+    Array[Edge[Double]], Option[List[List[(Double, Double, List[VertexId])]]])):
     List[(Double, Double, List[VertexId])] = {
     val maxClustersToReturn = 3
     val vid = vidVdataEdgesMsgs._1
@@ -576,7 +576,7 @@ object Algorithms {
   }
 
   private def computeAndSortExtendedSemiClusters(
-    allSemiClusters: List[(Double, Double, List[VertexId])]): 
+    allSemiClusters: List[(Double, Double, List[VertexId])]):
     List[(Double, (Double, Double, List[VertexId]))] = {
     val boundaryEdgeScore = 1.0
     var extendedSemiClusters: List[(Double, (Double, Double, List[VertexId]))] = Nil
@@ -892,7 +892,7 @@ object Algorithms {
           vdata.pickedEdgeWeight = pickedNbrWeight
           vdata
         })
-      // Find the roots of conjoined trees: let v.pickedNbrID = w.ID, if w.pickedNbrID is also 
+      // Find the roots of conjoined trees: let v.pickedNbrID = w.ID, if w.pickedNbrID is also
       // equal to v.ID, then v and w are part of the cycle of the conjoined tree and the one with
       // the higher ID is the root.
       g = g.updateSelfUsingAnotherVertex[VertexId](

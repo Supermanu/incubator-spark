@@ -239,7 +239,7 @@ class PrimitivesSuite extends FunSuite with LocalSparkContext {
     withSpark { sc =>
       // The update function takes the minimum of the propagated value and the current value.
       // As a result when updating outgoing neighbor values, 3 and 4 should update their values
-      // to 1, 0 and 1Êshould remain unchanged. and 2 should update it to 0 because the
+      // to 1, 0 and 1ï¿½should remain unchanged. and 2 should update it to 0 because the
       // we set the default aggregated value to 0.
       val resultGraph = getGraphForAggregateNeighborValuesTest(sc).aggregateNeighborValues[Int](
         EdgeDirection.Out, (nid, nvalue) => true, (vid, vvalue) => vid > 1, (vid, vvalue) => vvalue,
